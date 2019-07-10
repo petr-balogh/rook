@@ -63,10 +63,19 @@ func init() {
 		createBaseTestDir = false
 		baseTestDir = "/data"
 	}
+	openshiftSupport := os.Getenv("ROOK_OPENSHIFT_SUPPORT") == `true`
+	if openshiftSupport {
+		baseTestDir = "/var/lib/rook"
+	}
 }
 
 func SystemNamespace(namespace string) string {
-	return fmt.Sprintf("%s-system", namespace)
+	openshiftSupport := os.Getenv("ROOK_OPENSHIFT_SUPPORT") == `true`
+	if openshiftSupport {
+		return namespace
+	} else {
+		return fmt.Sprintf("%s-system", namespace)
+	}
 }
 
 func checkError(t *testing.T, err error, message string) {

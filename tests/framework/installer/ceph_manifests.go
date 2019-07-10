@@ -17,7 +17,9 @@ limitations under the License.
 package installer
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -248,7 +250,106 @@ spec:
 
 // GetRookOperator returns rook Operator manifest
 func (m *CephManifestsMaster) GetRookOperator(namespace string) string {
-	return `kind: Namespace
+	var operatorManifest bytes.Buffer
+	var openshiftSupport = os.Getenv("ROOK_OPENSHIFT_SUPPORT") == `true`
+	openshiftEnv := ""
+	clusterNamespace := "smoke-ns"
+	fmt.Printf("Cluster ns: %s, operator ns: %s", clusterNamespace, namespace)
+
+	if openshiftSupport {
+		openshiftEnv = `
+        - name: ROOK_HOSTPATH_REQUIRES_PRIVILEGED
+          value: "true"
+        - name: FLEXVOLUME_DIR_PATH
+          value: "/etc/kubernetes/kubelet-plugins/volume/exec"`
+		operatorManifest.WriteString(`---
+kind: SecurityContextConstraints
+# older versions of openshift have "apiVersion: v1"
+apiVersion: security.openshift.io/v1
+metadata:
+  name: rook-ceph
+allowPrivilegedContainer: true
+allowHostNetwork: true
+allowHostDirVolumePlugin: true
+priority:
+allowedCapabilities: []
+allowHostPorts: true
+allowHostPID: true
+allowHostIPC: true
+readOnlyRootFilesystem: false
+requiredDropCapabilities: []
+defaultAddCapabilities: []
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+fsGroup:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+allowedFlexVolumes:
+  - driver: "ceph.rook.io/rook"
+  - driver: "ceph.rook.io/rook-ceph"
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - flexVolume
+  - hostPath
+  - persistentVolumeClaim
+  - projected
+  - secret
+users:
+  # A user needs to be added for each rook service account.
+  # This assumes running in the default sample "rook-ceph" namespace.
+  # If other namespaces or service accounts are configured, they need to be updated here.
+  - system:serviceaccount:` + namespace + `:rook-ceph-system
+  - system:serviceaccount:` + namespace + `:default
+  - system:serviceaccount:` + namespace + `:rook-ceph-mgr
+  - system:serviceaccount:` + namespace + `:rook-ceph-osd
+---
+kind: SecurityContextConstraints
+# older versions of openshift have "apiVersion: v1"
+apiVersion: security.openshift.io/v1
+metadata:
+  name: rook-ceph-csi
+allowPrivilegedContainer: true
+allowHostNetwork: true
+allowHostDirVolumePlugin: true
+priority:
+allowedCapabilities: ['*']
+allowHostPorts: true
+allowHostPID: true
+allowHostIPC: true
+readOnlyRootFilesystem: false
+requiredDropCapabilities: []
+defaultAddCapabilities: []
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+allowedFlexVolumes:
+  - driver: "ceph.rook.io/rook"
+  - driver: "ceph.rook.io/rook-ceph"
+volumes: ['*']
+users:
+  # A user needs to be added for each rook service account.
+  # This assumes running in the default sample "rook-ceph" namespace.
+  # If other namespaces or service accounts are configured, they need to be updated here.
+  - system:serviceaccount:` + namespace + `:rook-csi-rbd-plugin-sa
+  - system:serviceaccount:` + namespace + `:rook-csi-rbd-provisioner-sa
+  - system:serviceaccount:` + namespace + `:rook-csi-rbd-attacher-sa
+  - system:serviceaccount:` + namespace + `:rook-csi-cephfs-plugin-sa
+  - system:serviceaccount:` + namespace + `:rook-csi-cephfs-provisioner-sa
+---`)
+	}
+	operatorManifest.WriteString(`
+---
+kind: Namespace
 apiVersion: v1
 metadata:
   name: ` + namespace + `
@@ -934,12 +1035,16 @@ spec:
         - name: ROOK_CSI_SNAPSHOTTER_IMAGE
           value: "quay.io/k8scsi/csi-snapshotter:v1.1.0"
         - name: ROOK_CSI_ATTACHER_IMAGE
-          value: "quay.io/k8scsi/csi-attacher:v1.1.1"
+          value: "quay.io/k8scsi/csi-attacher:v1.1.1"` + openshiftEnv + `
         volumeMounts:
         - mountPath: /etc/ceph-csi/rbd
           name: csi-rbd-config
         - mountPath: /etc/ceph-csi/cephfs
           name: csi-cephfs-config
+        - mountPath: /var/lib/rook
+          name: rook-config
+        - mountPath: /etc/ceph
+          name: default-config-dir
       volumes:
       - name: csi-rbd-config
         configMap:
@@ -947,7 +1052,12 @@ spec:
       - name: csi-cephfs-config
         configMap:
           name: csi-cephfs-config
-`
+      - name: rook-config
+        emptyDir: {}
+      - name: default-config-dir
+        emptyDir: {}
+`)
+	return operatorManifest.String()
 }
 
 // GetClusterRoles returns rook-cluster manifest
