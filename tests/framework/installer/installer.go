@@ -44,7 +44,8 @@ const (
 var (
 	// ** Variables that might need to be changed depending on the dev environment. The init function below will modify some of them automatically. **
 	baseTestDir       string
-	forceUseDevices   = false
+	RookTestOpenshift = os.Getenv("ROOK_TEST_OPENSHIFT") == `true`
+	forceUseDevices   = false || RookTestOpenshift
 	createBaseTestDir = true
 	// ** end of Variables to modify
 	logger              = capnslog.NewPackageLogger("github.com/rook/rook", "installer")
@@ -85,10 +86,19 @@ func init() {
 		createBaseTestDir = false
 		baseTestDir = "/data"
 	}
+	if RookTestOpenshift {
+		baseTestDir = "/var/lib/rook"
+		fmt.Sprintf("baseTestDir set to %s", baseTestDir)
+	}
 }
 
 func SystemNamespace(namespace string) string {
-	return fmt.Sprintf("%s-system", namespace)
+	if RookTestOpenshift {
+		fmt.Sprintf("For openshift execution used system namespace: %s", namespace)
+		return namespace
+	} else {
+		return fmt.Sprintf("%s-system", namespace)
+	}
 }
 
 func checkError(t *testing.T, err error, message string) {
