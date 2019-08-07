@@ -17,12 +17,17 @@ limitations under the License.
 package integration
 
 import (
+	"os"
 	"testing"
 
 	"github.com/rook/rook/tests/framework/clients"
 	"github.com/rook/rook/tests/framework/installer"
 	"github.com/rook/rook/tests/framework/utils"
 	"github.com/stretchr/testify/suite"
+)
+
+var (
+	RookTestOpenshift = os.Getenv("ROOK_TEST_OPENSHIFT") == `true`
 )
 
 // ************************************************
@@ -87,6 +92,10 @@ func (suite *SmokeSuite) TearDownSuite() {
 }
 
 func (suite *SmokeSuite) TestBlockCSI_SmokeTest() {
+	if RookTestOpenshift {
+		logger.Info("Skipping this test on OpenShift ENV because it's blocked by github issues: 3517 and 3520")
+		return
+	}
 	runCephCSIE2ETest(suite.helper, suite.k8sh, suite.Suite, suite.op.T(), suite.namespace)
 }
 
